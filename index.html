@@ -34,7 +34,7 @@
 <div class="card">
     <h2>ArcPay Hub</h2>
     <div class="info">Wallet: <span id="walletAddress" style="color:#fff">Not connected</span> 
-        <button onclick="copyAddress()" style="width:auto; padding:2px 8px; font-size:10px; margin-left:5px;">Copy</button>
+        <button onclick="copyFullAddress()" style="width:auto; padding:2px 8px; font-size:10px; margin-left:5px;">Copy</button>
     </div>
     <div class="balance" id="hubBalance">0.00 USDC</div>
     <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
@@ -44,7 +44,7 @@
     <button id="depositBtn" onclick="depositUSDC()" disabled>Deposit to Hub</button>
 
     <h3>History</h3>
-    <table><thead><tr><th>Event</th><th>Amount</th></tr></thead><tbody id="historyBody"></tbody></table>
+    <table><thead><tr><th>Type</th><th>Amount</th></tr></thead><tbody id="historyBody"></tbody></table>
 
     <h3>Withdraw</h3>
     <input type="number" id="withdrawAmount" placeholder="Amount">
@@ -76,13 +76,12 @@
         {"inputs":[{"name":"account","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
     ];
 
-    let provider, signer, contract;
+    let provider, signer, contract, currentAddress;
 
     async function updateBalance() {
         if (!contract || !signer) return;
         try {
-            const addr = await signer.getAddress();
-            const bal = await contract.balanceOf(addr);
+            const bal = await contract.balanceOf(currentAddress);
             document.getElementById("hubBalance").innerText = ethers.formatUnits(bal, 6) + " USDC";
             await loadHistory();
         } catch (e) { console.error(e); }
@@ -90,11 +89,16 @@
 
     async function loadHistory() {
         if (!contract || !signer) return;
-        const addr = await signer.getAddress();
-        // Busca os ultimos 500 blocos
-        const logs = await contract.queryFilter(contract.filters.Deposit(addr), -500);
         const tbody = document.getElementById("historyBody");
-        tbody.innerHTML = logs.map(l => `<tr><td>Deposit</td><td>${ethers.formatUnits(l.args[1], 6)} USDC</td></tr>`).join('');
+        const logsDeposit = await contract.queryFilter(contract.filters.Deposit(currentAddress), -500);
+        const logsReceived = await contract.queryFilter(contract.filters.InternalPayment(null, currentAddress), -500);
+        const logsSent = await contract.queryFilter(contract.filters.InternalPayment(currentAddress, null), -500);
+        
+        let html = "";
+        logsDeposit.forEach(l => html += `<tr><td>Deposit</td><td>+${ethers.formatUnits(l.args[1], 6)}</td></tr>`);
+        logsReceived.forEach(l => html += `<tr><td>Received</td><td>+${ethers.formatUnits(l.args[2], 6)}</td></tr>`);
+        logsSent.forEach(l => html += `<tr><td>Sent</td><td>-${ethers.formatUnits(l.args[2], 6)}</td></tr>`);
+        tbody.innerHTML = html;
     }
 
     async function connectWallet() {
@@ -102,8 +106,8 @@
         signer = await provider.getSigner();
         contract = new ethers.Contract(contractAddress, contractABI, signer);
         
-        const addr = await signer.getAddress();
-        document.getElementById("walletAddress").innerText = addr.slice(0,6) + "...";
+        currentAddress = await signer.getAddress();
+        document.getElementById("walletAddress").innerText = currentAddress.slice(0,6) + "...";
         const btn = document.getElementById("connectBtn");
         btn.innerText = "Connected";
         btn.classList.add("btn-connected");
@@ -113,25 +117,19 @@
         document.getElementById("withdrawBtn").disabled = false;
         
         localStorage.setItem("isWalletConnected", "true");
-        
-        // Remove ouvintes antigos para evitar duplicação
         contract.removeAllListeners();
         contract.on("Deposit", updateBalance);
         contract.on("InternalPayment", updateBalance);
-        
         updateBalance();
     }
 
     window.onload = async () => {
-        if (localStorage.getItem("isWalletConnected") === "true") {
-            await connectWallet();
-        }
+        if (localStorage.getItem("isWalletConnected") === "true") await connectWallet();
     };
 
-    function copyAddress() { 
-        const addr = document.getElementById("walletAddress").innerText;
-        navigator.clipboard.writeText(addr); 
-        alert("Address Copied!"); 
+    function copyFullAddress() { 
+        navigator.clipboard.writeText(currentAddress); 
+        alert("Endereço completo copiado!"); 
     }
 
     async function depositUSDC() {
@@ -147,8 +145,7 @@
     function showStatus(msg) { const sb = document.getElementById("statusBox"); sb.style.display="block"; sb.innerText=msg; setTimeout(()=>sb.style.display="none", 3000); }
     
     async function generatePaymentQR() {
-        const myAddress = await signer.getAddress();
-        const data = `arcpay:${myAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
+        const data = `arcpay:${currentAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
         document.getElementById("qrcode").innerHTML = "";
         new QRCode(document.getElementById("qrcode"), data);
         document.getElementById("payString").value = data;
