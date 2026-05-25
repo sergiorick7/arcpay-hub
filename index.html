@@ -81,14 +81,17 @@
     async function updateBalance() {
         if (!contract || !signer) return;
         try {
-            const bal = await contract.balanceOf(await signer.getAddress());
+            const addr = await signer.getAddress();
+            const bal = await contract.balanceOf(addr);
             document.getElementById("hubBalance").innerText = ethers.formatUnits(bal, 6) + " USDC";
-            loadHistory();
+            await loadHistory();
         } catch (e) { console.error(e); }
     }
 
     async function loadHistory() {
+        if (!contract || !signer) return;
         const addr = await signer.getAddress();
+        // Busca os ultimos 500 blocos
         const logs = await contract.queryFilter(contract.filters.Deposit(addr), -500);
         const tbody = document.getElementById("historyBody");
         tbody.innerHTML = logs.map(l => `<tr><td>Deposit</td><td>${ethers.formatUnits(l.args[1], 6)} USDC</td></tr>`).join('');
@@ -98,19 +101,38 @@
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
         contract = new ethers.Contract(contractAddress, contractABI, signer);
+        
         const addr = await signer.getAddress();
         document.getElementById("walletAddress").innerText = addr.slice(0,6) + "...";
         const btn = document.getElementById("connectBtn");
         btn.innerText = "Connected";
         btn.classList.add("btn-connected");
+        
         document.getElementById("depositBtn").disabled = false;
         document.getElementById("payBtn").disabled = false;
         document.getElementById("withdrawBtn").disabled = false;
+        
+        localStorage.setItem("isWalletConnected", "true");
+        
+        // Remove ouvintes antigos para evitar duplicação
+        contract.removeAllListeners();
         contract.on("Deposit", updateBalance);
+        contract.on("InternalPayment", updateBalance);
+        
         updateBalance();
     }
 
-    function copyAddress() { navigator.clipboard.writeText(document.getElementById("walletAddress").innerText); alert("Copied!"); }
+    window.onload = async () => {
+        if (localStorage.getItem("isWalletConnected") === "true") {
+            await connectWallet();
+        }
+    };
+
+    function copyAddress() { 
+        const addr = document.getElementById("walletAddress").innerText;
+        navigator.clipboard.writeText(addr); 
+        alert("Address Copied!"); 
+    }
 
     async function depositUSDC() {
         const btn = document.getElementById("depositBtn");
@@ -119,11 +141,11 @@
         await tx.wait();
         btn.innerHTML = "Deposit to Hub";
         showStatus("Confirmed!");
+        updateBalance();
     }
 
-    function showStatus(msg) { const sb = document.getElementById("statusBox"); sb.style.display="block"; sb.innerText=msg; }
+    function showStatus(msg) { const sb = document.getElementById("statusBox"); sb.style.display="block"; sb.innerText=msg; setTimeout(()=>sb.style.display="none", 3000); }
     
-    // ... (Mantive as funções generatePaymentQR, startScanner e processPayment intactas)
     async function generatePaymentQR() {
         const myAddress = await signer.getAddress();
         const data = `arcpay:${myAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
@@ -141,6 +163,7 @@
         const params = new URLSearchParams(raw.split("?")[1]);
         const tx = await contract.payInternal(addr, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
         showStatus("Processing..."); await tx.wait(); showStatus("Sent!");
+        updateBalance();
     }
 </script>
 </body>
