@@ -55,4 +55,107 @@
 </div>
 
 <script>
-    const contractAddress = "0xa5905f
+    const contractAddress = "0xa5905fD525a823A8ae616aD4C4C51508bA520D27";
+    const contractABI = [
+        {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"string","name":"sourceChain","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"string","name":"paymentReference","type":"string"}],"name":"payInternal","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+    ];
+
+    let provider, signer, contract;
+
+    async function updateBalance() {
+        if (!contract || !signer) return;
+        document.getElementById("hubBalance").innerText = "Updating...";
+        try {
+            const userAddress = await signer.getAddress();
+            const balance = await contract.balanceOf(userAddress);
+            document.getElementById("hubBalance").innerText = ethers.formatUnits(balance, 6) + " USDC";
+        } catch (error) {
+            console.error("Error updating balance:", error);
+        }
+    }
+
+    async function connectWallet() {
+        if (!window.ethereum) return alert("MetaMask not found!");
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        contract = new ethers.Contract(contractAddress, contractABI, signer);
+        
+        const address = await signer.getAddress();
+        document.getElementById("walletAddress").innerText = address.slice(0, 6) + "...";
+        
+        document.getElementById("depositBtn").disabled = false;
+        document.getElementById("payBtn").disabled = false;
+        document.getElementById("withdrawBtn").disabled = false;
+        
+        localStorage.setItem("isWalletConnected", "true");
+        
+        // Remove old listeners to avoid memory leaks or duplicate updates
+        contract.removeAllListeners(); 
+        
+        // Set real-time listeners
+        contract.on("Deposit", () => updateBalance());
+        contract.on("Withdrawn", () => updateBalance());
+        contract.on("InternalPayment", () => updateBalance());
+        
+        updateBalance();
+    }
+
+    window.onload = async () => {
+        if (localStorage.getItem("isWalletConnected") === "true") {
+            await connectWallet();
+        }
+    };
+
+    function showStatus(message) {
+        const statusBox = document.getElementById("statusBox");
+        statusBox.style.display = "block"; 
+        statusBox.innerText = message;
+    }
+
+    async function depositUSDC() {
+        const amount = document.getElementById("amountInput").value;
+        const tx = await contract.deposit(ethers.parseUnits(amount, 6), "ArcNetwork", { value: ethers.parseEther(amount) });
+        showStatus("Confirming deposit..."); 
+        await tx.wait(); 
+        showStatus("Deposit Confirmed!");
+    }
+
+    async function withdrawUSDC() {
+        const amount = document.getElementById("withdrawAmount").value;
+        const myAddress = await signer.getAddress();
+        const tx = await contract.withdraw(myAddress, ethers.parseUnits(amount, 6));
+        showStatus("Processing withdrawal..."); 
+        await tx.wait(); 
+        showStatus("Withdrawal Successful!");
+    }
+
+    function generatePaymentQR() {
+        const data = `arcpay:${contractAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
+        document.getElementById("qrcode").innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), data);
+        document.getElementById("payString").value = data;
+    }
+
+    function startScanner() {
+        const scanner = new Html5Qrcode("reader");
+        scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => {
+            document.getElementById("payString").value = decodedText;
+            scanner.stop();
+            showStatus("Scan Successful!");
+        });
+    }
+
+    async function processPayment() {
+        const rawData = document.getElementById("payString").value;
+        const params = new URLSearchParams(rawData.split("?")[1]);
+        const tx = await contract.payInternal(contractAddress, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
+        showStatus("Processing payment..."); 
+        await tx.wait(); 
+        showStatus("Payment Sent!");
+    }
+</script>
+</body>
+</html>
