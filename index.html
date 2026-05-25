@@ -92,10 +92,7 @@
         
         localStorage.setItem("isWalletConnected", "true");
         
-        // Remove old listeners to avoid memory leaks or duplicate updates
         contract.removeAllListeners(); 
-        
-        // Set real-time listeners
         contract.on("Deposit", () => updateBalance());
         contract.on("Withdrawn", () => updateBalance());
         contract.on("InternalPayment", () => updateBalance());
@@ -132,8 +129,11 @@
         showStatus("Withdrawal Successful!");
     }
 
-    function generatePaymentQR() {
-        const data = `arcpay:${contractAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
+    async function generatePaymentQR() {
+        if (!signer) return alert("Please connect wallet first!");
+        const myAddress = await signer.getAddress();
+        // Now using your personal address as the destination
+        const data = `arcpay:${myAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
         document.getElementById("qrcode").innerHTML = "";
         new QRCode(document.getElementById("qrcode"), data);
         document.getElementById("payString").value = data;
@@ -150,8 +150,11 @@
 
     async function processPayment() {
         const rawData = document.getElementById("payString").value;
+        // Parse the address from the string (arcpay:ADDRESS?...)
+        const addressPart = rawData.split(":")[1].split("?")[0];
         const params = new URLSearchParams(rawData.split("?")[1]);
-        const tx = await contract.payInternal(contractAddress, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
+        
+        const tx = await contract.payInternal(addressPart, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
         showStatus("Processing payment..."); 
         await tx.wait(); 
         showStatus("Payment Sent!");
