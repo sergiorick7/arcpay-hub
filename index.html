@@ -3,161 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArcPay Hub | Financial Interface</title>
+    <title>ArcPay Hub | Professional Interface</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --bg-deep: #0f1115; --bg-card: #1a1d23; --accent: #2563eb; --text-main: #f8fafc; --text-dim: #94a3b8; --border: #2d3441; --danger: #ef4444; }
+        :root { --bg-deep: #0f1115; --bg-card: #1a1d23; --accent: #2563eb; --success: #22c55e; --text-main: #f8fafc; --text-dim: #94a3b8; --border: #2d3441; --danger: #ef4444; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-deep); color: var(--text-main); padding: 20px; text-align: center; }
         .card { background: var(--bg-card); max-width: 450px; margin: 0 auto; padding: 30px; border-radius: 16px; border: 1px solid var(--border); }
-        h2 { color: #fff; font-size: 22px; margin-bottom: 20px; }
-        h3 { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 25px 0 10px; }
         button { background: var(--accent); color: #fff; border: none; padding: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.3s; }
-        button:disabled { background: #475569; cursor: not-allowed; }
-        .btn-withdraw { background: var(--danger); margin-top: 5px; }
+        .connected { background: var(--success) !important; }
+        .spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #fff; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 12px; }
+        th { color: var(--text-dim); text-align: left; }
+        td { border-bottom: 1px solid var(--border); padding: 8px 0; text-align: left; }
         input { width: 100%; padding: 12px; margin-top: 5px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); background: #0b0c0f; color: white; }
-        .status { margin-top: 20px; padding: 12px; border-radius: 8px; background: #064e3b; color: #34d399; font-size: 13px; display: none; }
-        #qrcode { background: white; padding: 10px; border-radius: 8px; margin-top: 20px; display: inline-block; }
-        #reader { width: 100%; margin-top: 15px; border-radius: 8px; }
-        .balance { font-size: 24px; font-weight: bold; color: var(--accent); margin: 10px 0; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h2>ArcPay Hub</h2>
-    <div class="info">Wallet: <span id="walletAddress" style="color:#fff">Not connected</span></div>
-    <div class="balance" id="hubBalance">0.00 USDC</div>
+    <div id="walletInfo">Wallet: <span id="walletAddress">Not connected</span></div>
+    <button id="copyBtn" onclick="copyAddress()" style="background:none; border:1px solid #444; padding:5px; font-size:10px;">📋 Copy Address</button>
+    <div class="balance" id="hubBalance" style="font-size: 24px; color: var(--accent); margin: 15px 0;">0.00 USDC</div>
     <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
 
-    <h3>Deposit Funds</h3>
+    <h3>Deposit</h3>
     <input type="number" id="amountInput" value="5">
     <button id="depositBtn" onclick="depositUSDC()" disabled>Deposit to Hub</button>
 
-    <h3>Withdraw Funds</h3>
-    <input type="number" id="withdrawAmount" placeholder="Amount to withdraw">
-    <button class="btn-withdraw" id="withdrawBtn" onclick="withdrawUSDC()" disabled>Withdraw from Hub</button>
-
-    <h3>Generate Payment QR</h3>
-    <input type="number" id="qrAmount" value="10">
-    <input type="text" id="qrReference" placeholder="Payment Reference">
-    <button onclick="generatePaymentQR()">Generate QR Code</button>
-    <div id="qrcode"></div>
-
-    <h3>Payment Processor</h3>
-    <button onclick="startScanner()" style="background:#6366f1">📷 Open Camera Scanner</button>
-    <div id="reader"></div>
-    <input type="text" id="payString" placeholder="Scanned data or text input">
-    <button id="payBtn" onclick="processPayment()" disabled>Confirm Payment</button>
-
-    <div id="statusBox" class="status"></div>
+    <h3>History</h3>
+    <table id="historyTable">
+        <thead><tr><th>Type</th><th>Amount</th></tr></thead>
+        <tbody id="historyBody"></tbody>
+    </table>
 </div>
 
 <script>
     const contractAddress = "0xa5905fD525a823A8ae616aD4C4C51508bA520D27";
     const contractABI = [
-        {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"string","name":"sourceChain","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},
-        {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
-        {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"string","name":"paymentReference","type":"string"}],"name":"payInternal","outputs":[],"stateMutability":"nonpayable","type":"function"},
-        {"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+        {"anonymous":false,"inputs":[{"indexed":true,"name":"user","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"sourceChain","type":"string"}],"name":"Deposit","type":"event"},
+        {"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"paymentReference","type":"string"}],"name":"InternalPayment","type":"event"},
+        {"inputs":[{"name":"amount","type":"uint256"},{"name":"sourceChain","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},
+        {"inputs":[{"name":"account","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
     ];
 
     let provider, signer, contract;
 
     async function updateBalance() {
-        if (!contract || !signer) return;
-        document.getElementById("hubBalance").innerText = "Updating...";
-        try {
-            const userAddress = await signer.getAddress();
-            const balance = await contract.balanceOf(userAddress);
-            document.getElementById("hubBalance").innerText = ethers.formatUnits(balance, 6) + " USDC";
-        } catch (error) {
-            console.error("Error updating balance:", error);
-        }
+        const bal = await contract.balanceOf(await signer.getAddress());
+        document.getElementById("hubBalance").innerText = ethers.formatUnits(bal, 6) + " USDC";
     }
 
     async function connectWallet() {
-        if (!window.ethereum) return alert("MetaMask not found!");
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
         contract = new ethers.Contract(contractAddress, contractABI, signer);
         
-        const address = await signer.getAddress();
-        document.getElementById("walletAddress").innerText = address.slice(0, 6) + "...";
-        
+        const addr = await signer.getAddress();
+        const btn = document.getElementById("connectBtn");
+        btn.innerText = "Connected";
+        btn.className = "connected";
+        document.getElementById("walletAddress").innerText = addr.slice(0,6) + "..." + addr.slice(-4);
         document.getElementById("depositBtn").disabled = false;
-        document.getElementById("payBtn").disabled = false;
-        document.getElementById("withdrawBtn").disabled = false;
-        
-        localStorage.setItem("isWalletConnected", "true");
-        
-        contract.removeAllListeners(); 
-        contract.on("Deposit", () => updateBalance());
-        contract.on("Withdrawn", () => updateBalance());
-        contract.on("InternalPayment", () => updateBalance());
         
         updateBalance();
+        loadHistory();
     }
 
-    window.onload = async () => {
-        if (localStorage.getItem("isWalletConnected") === "true") {
-            await connectWallet();
-        }
-    };
-
-    function showStatus(message) {
-        const statusBox = document.getElementById("statusBox");
-        statusBox.style.display = "block"; 
-        statusBox.innerText = message;
+    function copyAddress() {
+        navigator.clipboard.writeText(document.getElementById("walletAddress").innerText);
+        alert("Address copied!");
     }
 
-    async function depositUSDC() {
-        const amount = document.getElementById("amountInput").value;
-        const tx = await contract.deposit(ethers.parseUnits(amount, 6), "ArcNetwork", { value: ethers.parseEther(amount) });
-        showStatus("Confirming deposit..."); 
-        await tx.wait(); 
-        showStatus("Deposit Confirmed!");
-    }
-
-    async function withdrawUSDC() {
-        const amount = document.getElementById("withdrawAmount").value;
-        const myAddress = await signer.getAddress();
-        const tx = await contract.withdraw(myAddress, ethers.parseUnits(amount, 6));
-        showStatus("Processing withdrawal..."); 
-        await tx.wait(); 
-        showStatus("Withdrawal Successful!");
-    }
-
-    async function generatePaymentQR() {
-        if (!signer) return alert("Please connect wallet first!");
-        const myAddress = await signer.getAddress();
-        // Now using your personal address as the destination
-        const data = `arcpay:${myAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
-        document.getElementById("qrcode").innerHTML = "";
-        new QRCode(document.getElementById("qrcode"), data);
-        document.getElementById("payString").value = data;
-    }
-
-    function startScanner() {
-        const scanner = new Html5Qrcode("reader");
-        scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => {
-            document.getElementById("payString").value = decodedText;
-            scanner.stop();
-            showStatus("Scan Successful!");
+    async function loadHistory() {
+        const filter = contract.filters.Deposit(await signer.getAddress());
+        const logs = await contract.queryFilter(filter, -1000);
+        const body = document.getElementById("historyBody");
+        body.innerHTML = "";
+        logs.forEach(log => {
+            body.innerHTML += `<tr><td>Deposit</td><td>${ethers.formatUnits(log.args[1], 6)}</td></tr>`;
         });
     }
 
-    async function processPayment() {
-        const rawData = document.getElementById("payString").value;
-        // Parse the address from the string (arcpay:ADDRESS?...)
-        const addressPart = rawData.split(":")[1].split("?")[0];
-        const params = new URLSearchParams(rawData.split("?")[1]);
-        
-        const tx = await contract.payInternal(addressPart, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
-        showStatus("Processing payment..."); 
-        await tx.wait(); 
-        showStatus("Payment Sent!");
+    async function depositUSDC() {
+        const btn = document.getElementById("depositBtn");
+        btn.innerHTML = '<span class="spinner"></span>Processing...';
+        const tx = await contract.deposit(ethers.parseUnits(document.getElementById("amountInput").value, 6), "Arc", { value: ethers.parseEther(document.getElementById("amountInput").value) });
+        await tx.wait();
+        btn.innerHTML = "Deposit to Hub";
+        updateBalance();
+        loadHistory();
     }
 </script>
 </body>
