@@ -3,31 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArcPay Hub | Professional Interface</title>
+    <title>ArcPay Hub | Financial Interface</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --bg-deep: #0f1115; --bg-card: #1a1d23; --accent: #2563eb; --success: #22c55e; --text-main: #f8fafc; --text-dim: #94a3b8; --border: #2d3441; --danger: #ef4444; }
+        :root { --bg-deep: #0f1115; --bg-card: #1a1d23; --accent: #2563eb; --success: #16a34a; --text-main: #f8fafc; --text-dim: #94a3b8; --border: #2d3441; --danger: #ef4444; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-deep); color: var(--text-main); padding: 20px; text-align: center; }
         .card { background: var(--bg-card); max-width: 450px; margin: 0 auto; padding: 30px; border-radius: 16px; border: 1px solid var(--border); }
+        h2 { color: #fff; font-size: 22px; margin-bottom: 20px; }
+        h3 { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 25px 0 10px; }
         button { background: var(--accent); color: #fff; border: none; padding: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.3s; }
-        .connected { background: var(--success) !important; }
-        .spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #fff; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; margin-right: 8px; vertical-align: middle; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .btn-connected { background: var(--success) !important; cursor: default; }
+        .btn-withdraw { background: var(--danger); margin-top: 5px; }
+        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 12px; }
-        th { color: var(--text-dim); text-align: left; }
-        td { border-bottom: 1px solid var(--border); padding: 8px 0; text-align: left; }
+        table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 11px; color: var(--text-dim); }
+        th { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; }
+        td { padding: 8px; border-bottom: 1px solid #222; text-align: left; }
         input { width: 100%; padding: 12px; margin-top: 5px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); background: #0b0c0f; color: white; }
+        .status { margin-top: 20px; padding: 12px; border-radius: 8px; background: #064e3b; color: #34d399; font-size: 13px; display: none; }
+        #qrcode { background: white; padding: 10px; border-radius: 8px; margin-top: 20px; display: inline-block; }
+        #reader { width: 100%; margin-top: 15px; border-radius: 8px; }
+        .balance { font-size: 24px; font-weight: bold; color: var(--accent); margin: 10px 0; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h2>ArcPay Hub</h2>
-    <div id="walletInfo">Wallet: <span id="walletAddress">Not connected</span></div>
-    <button id="copyBtn" onclick="copyAddress()" style="background:none; border:1px solid #444; padding:5px; font-size:10px;">📋 Copy Address</button>
-    <div class="balance" id="hubBalance" style="font-size: 24px; color: var(--accent); margin: 15px 0;">0.00 USDC</div>
+    <div class="info">Wallet: <span id="walletAddress" style="color:#fff">Not connected</span> 
+        <button onclick="copyAddress()" style="width:auto; padding:2px 8px; font-size:10px; margin-left:5px;">Copy</button>
+    </div>
+    <div class="balance" id="hubBalance">0.00 USDC</div>
     <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
 
     <h3>Deposit</h3>
@@ -35,10 +44,25 @@
     <button id="depositBtn" onclick="depositUSDC()" disabled>Deposit to Hub</button>
 
     <h3>History</h3>
-    <table id="historyTable">
-        <thead><tr><th>Type</th><th>Amount</th></tr></thead>
-        <tbody id="historyBody"></tbody>
-    </table>
+    <table><thead><tr><th>Event</th><th>Amount</th></tr></thead><tbody id="historyBody"></tbody></table>
+
+    <h3>Withdraw</h3>
+    <input type="number" id="withdrawAmount" placeholder="Amount">
+    <button class="btn-withdraw" id="withdrawBtn" onclick="withdrawUSDC()" disabled>Withdraw</button>
+
+    <h3>QR Code</h3>
+    <input type="number" id="qrAmount" value="10">
+    <input type="text" id="qrReference" placeholder="Ref">
+    <button onclick="generatePaymentQR()">Generate QR</button>
+    <div id="qrcode"></div>
+
+    <h3>Scanner</h3>
+    <button onclick="startScanner()" style="background:#6366f1">📷 Scan QR</button>
+    <div id="reader"></div>
+    <input type="text" id="payString" placeholder="Scanned data">
+    <button id="payBtn" onclick="processPayment()" disabled>Confirm Payment</button>
+
+    <div id="statusBox" class="status"></div>
 </div>
 
 <script>
@@ -47,46 +71,46 @@
         {"anonymous":false,"inputs":[{"indexed":true,"name":"user","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"sourceChain","type":"string"}],"name":"Deposit","type":"event"},
         {"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"paymentReference","type":"string"}],"name":"InternalPayment","type":"event"},
         {"inputs":[{"name":"amount","type":"uint256"},{"name":"sourceChain","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},
+        {"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"},{"name":"paymentReference","type":"string"}],"name":"payInternal","outputs":[],"stateMutability":"nonpayable","type":"function"},
         {"inputs":[{"name":"account","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
     ];
 
     let provider, signer, contract;
 
     async function updateBalance() {
-        const bal = await contract.balanceOf(await signer.getAddress());
-        document.getElementById("hubBalance").innerText = ethers.formatUnits(bal, 6) + " USDC";
+        if (!contract || !signer) return;
+        try {
+            const bal = await contract.balanceOf(await signer.getAddress());
+            document.getElementById("hubBalance").innerText = ethers.formatUnits(bal, 6) + " USDC";
+            loadHistory();
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadHistory() {
+        const addr = await signer.getAddress();
+        const logs = await contract.queryFilter(contract.filters.Deposit(addr), -500);
+        const tbody = document.getElementById("historyBody");
+        tbody.innerHTML = logs.map(l => `<tr><td>Deposit</td><td>${ethers.formatUnits(l.args[1], 6)} USDC</td></tr>`).join('');
     }
 
     async function connectWallet() {
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
         contract = new ethers.Contract(contractAddress, contractABI, signer);
-        
         const addr = await signer.getAddress();
+        document.getElementById("walletAddress").innerText = addr.slice(0,6) + "...";
         const btn = document.getElementById("connectBtn");
         btn.innerText = "Connected";
-        btn.className = "connected";
-        document.getElementById("walletAddress").innerText = addr.slice(0,6) + "..." + addr.slice(-4);
+        btn.classList.add("btn-connected");
         document.getElementById("depositBtn").disabled = false;
-        
+        document.getElementById("payBtn").disabled = false;
+        document.getElementById("withdrawBtn").disabled = false;
+        contract.on("Deposit", updateBalance);
         updateBalance();
-        loadHistory();
     }
 
-    function copyAddress() {
-        navigator.clipboard.writeText(document.getElementById("walletAddress").innerText);
-        alert("Address copied!");
-    }
-
-    async function loadHistory() {
-        const filter = contract.filters.Deposit(await signer.getAddress());
-        const logs = await contract.queryFilter(filter, -1000);
-        const body = document.getElementById("historyBody");
-        body.innerHTML = "";
-        logs.forEach(log => {
-            body.innerHTML += `<tr><td>Deposit</td><td>${ethers.formatUnits(log.args[1], 6)}</td></tr>`;
-        });
-    }
+    function copyAddress() { navigator.clipboard.writeText(document.getElementById("walletAddress").innerText); alert("Copied!"); }
 
     async function depositUSDC() {
         const btn = document.getElementById("depositBtn");
@@ -94,8 +118,29 @@
         const tx = await contract.deposit(ethers.parseUnits(document.getElementById("amountInput").value, 6), "Arc", { value: ethers.parseEther(document.getElementById("amountInput").value) });
         await tx.wait();
         btn.innerHTML = "Deposit to Hub";
-        updateBalance();
-        loadHistory();
+        showStatus("Confirmed!");
+    }
+
+    function showStatus(msg) { const sb = document.getElementById("statusBox"); sb.style.display="block"; sb.innerText=msg; }
+    
+    // ... (Mantive as funções generatePaymentQR, startScanner e processPayment intactas)
+    async function generatePaymentQR() {
+        const myAddress = await signer.getAddress();
+        const data = `arcpay:${myAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
+        document.getElementById("qrcode").innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), data);
+        document.getElementById("payString").value = data;
+    }
+    function startScanner() {
+        const scanner = new Html5Qrcode("reader");
+        scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => { document.getElementById("payString").value = text; scanner.stop(); showStatus("Scanned!"); });
+    }
+    async function processPayment() {
+        const raw = document.getElementById("payString").value;
+        const addr = raw.split(":")[1].split("?")[0];
+        const params = new URLSearchParams(raw.split("?")[1]);
+        const tx = await contract.payInternal(addr, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
+        showStatus("Processing..."); await tx.wait(); showStatus("Sent!");
     }
 </script>
 </body>
