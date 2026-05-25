@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcPay Hub | Financial Interface</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        :root { --bg-deep: #0f1115; --bg-card: #1a1d23; --accent: #2563eb; --text-main: #f8fafc; --text-dim: #94a3b8; --border: #2d3441; --danger: #ef4444; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-deep); color: var(--text-main); padding: 20px; text-align: center; }
+        .card { background: var(--bg-card); max-width: 450px; margin: 0 auto; padding: 30px; border-radius: 16px; border: 1px solid var(--border); }
+        h2 { color: #fff; font-size: 22px; margin-bottom: 20px; }
+        h3 { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 25px 0 10px; }
+        button { background: var(--accent); color: #fff; border: none; padding: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.3s; }
+        .btn-withdraw { background: var(--danger); margin-top: 5px; }
+        input { width: 100%; padding: 12px; margin-top: 5px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); background: #0b0c0f; color: white; }
+        .status { margin-top: 20px; padding: 12px; border-radius: 8px; background: #064e3b; color: #34d399; font-size: 13px; display: none; }
+        #qrcode { background: white; padding: 10px; border-radius: 8px; margin-top: 20px; display: inline-block; }
+        #reader { width: 100%; margin-top: 15px; border-radius: 8px; }
+        .balance { font-size: 24px; font-weight: bold; color: var(--accent); margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>ArcPay Hub</h2>
+    <div class="info">Wallet: <span id="walletAddress" style="color:#fff">Not connected</span></div>
+    <div class="balance" id="hubBalance">0.00 USDC</div>
+    <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+
+    <h3>Deposit Funds</h3>
+    <input type="number" id="amountInput" value="5">
+    <button id="depositBtn" onclick="depositUSDC()" disabled>Deposit to Hub</button>
+
+    <h3>Withdraw Funds</h3>
+    <input type="number" id="withdrawAmount" placeholder="Amount to withdraw">
+    <button class="btn-withdraw" id="withdrawBtn" onclick="withdrawUSDC()" disabled>Withdraw from Hub</button>
+
+    <h3>Generate Payment QR</h3>
+    <input type="number" id="qrAmount" value="10">
+    <input type="text" id="qrReference" placeholder="Payment Reference">
+    <button onclick="generatePaymentQR()">Generate QR Code</button>
+    <div id="qrcode"></div>
+
+    <h3>Payment Processor</h3>
+    <button onclick="startScanner()" style="background:#6366f1">📷 Open Camera Scanner</button>
+    <div id="reader"></div>
+    <input type="text" id="payString" placeholder="Scanned data or text input">
+    <button id="payBtn" onclick="processPayment()" disabled>Confirm Payment</button>
+
+    <div id="statusBox" class="status"></div>
+</div>
+
+<script>
+    const contractAddress = "0xa5905fD525a823A8ae616aD4C4C51508bA520D27";
+    const contractABI = [
+        {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"string","name":"sourceChain","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"string","name":"paymentReference","type":"string"}],"name":"payInternal","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+    ];
+
+    let provider, signer, contract;
+
+    function showStatus(msg) {
+        const sb = document.getElementById("statusBox");
+        sb.style.display = "block"; sb.innerText = msg;
+    }
+
+    async function connectWallet() {
+        if (!window.ethereum) return alert("MetaMask not found!");
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        contract = new ethers.Contract(contractAddress, contractABI, signer);
+        const addr = await signer.getAddress();
+        document.getElementById("walletAddress").innerText = addr.slice(0,6) + "...";
+        document.getElementById("depositBtn").disabled = false;
+        document.getElementById("payBtn").disabled = false;
+        document.getElementById("withdrawBtn").disabled = false;
+        const bal = await contract.balanceOf(addr);
+        document.getElementById("hubBalance").innerText = ethers.formatUnits(bal, 6) + " USDC";
+    }
+
+    async function depositUSDC() {
+        const amt = ethers.parseUnits(document.getElementById("amountInput").value, 6);
+        const tx = await contract.deposit(amt, "Base", { value: ethers.parseEther(document.getElementById("amountInput").value) });
+        showStatus("Confirming deposit..."); await tx.wait(); showStatus("Deposit Confirmed!");
+    }
+
+    async function withdrawUSDC() {
+        const amt = ethers.parseUnits(document.getElementById("withdrawAmount").value, 6);
+        const myAddr = await signer.getAddress();
+        const tx = await contract.withdraw(myAddr, amt);
+        showStatus("Processing withdrawal..."); await tx.wait(); showStatus("Withdrawal Successful!");
+    }
+
+    function generatePaymentQR() {
+        const data = `arcpay:${contractAddress}?amount=${document.getElementById("qrAmount").value}&ref=${encodeURIComponent(document.getElementById("qrReference").value)}`;
+        document.getElementById("qrcode").innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), data);
+        document.getElementById("payString").value = data;
+    }
+
+    function startScanner() {
+        const scanner = new Html5Qrcode("reader");
+        scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => {
+            document.getElementById("payString").value = decodedText;
+            scanner.stop();
+            showStatus("Scan Successful!");
+        });
+    }
+
+    async function processPayment() {
+        const raw = document.getElementById("payString").value;
+        const params = new URLSearchParams(raw.split("?")[1]);
+        const tx = await contract.payInternal(contractAddress, ethers.parseUnits(params.get("amount"), 6), params.get("ref"));
+        showStatus("Processing payment..."); await tx.wait(); showStatus("Payment Sent!");
+    }
+</script>
+</body>
+</html>
